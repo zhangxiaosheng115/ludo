@@ -1,0 +1,6 @@
+log
+*.log
+.idea/
+__pycache__
+src/test.py
+src/test

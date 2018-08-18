@@ -1,0 +1,8 @@
+redis
+geoip2
+requests
+mongoengine
+sqlalchemy
+mysql-connector
+pycryptodome
+gunicorn

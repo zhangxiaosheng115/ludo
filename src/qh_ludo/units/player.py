@@ -24,6 +24,8 @@ class Player(object):
             plane_third_steps=config.PLANE_BEGIN_STEP,
             plane_fourth_steps=config.PLANE_BEGIN_STEP,
 
+            # 是否在桌子里, 1----在  0----不在
+            in_desk = 1,
             # 座位号
             seat_id=0,
             # 当前扔的色子数值

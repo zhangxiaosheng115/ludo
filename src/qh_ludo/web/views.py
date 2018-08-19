@@ -22,7 +22,7 @@ def create_game():
         'type':{'default': config.SPEEDINESS_TYPE, },
         'cost_gold':{'default':config.GOlD_LIST[0], },
     })
-    LudoApi.create_game(**params)
+    return LudoApi.create_game(**params)
 
 
 @app.route('/ludo/join_game')
@@ -38,7 +38,7 @@ def join_game():
         'game_id:int': {'default':None, 'rule': Validator.required},
     })
 
-    LudoApi.join_game(**params)
+    return LudoApi.join_game(**params)
 
 
 @app.route('/ludo/start_game')
@@ -53,7 +53,7 @@ def start_game():
         'game_id:int': {'default': None, 'rule': Validator.required},
     })
 
-    LudoApi.start_game(**params)
+    return LudoApi.start_game(**params)
 
 
 @app.route('/ludo/match_game')
@@ -68,7 +68,7 @@ def match_game():
         'uid:str': {'default': None, 'rule': Validator.required},
     })
 
-    LudoApi.match_game(**params)
+    return LudoApi.match_game(**params)
 
 
 @app.route('/ludo/exit_game')
@@ -79,9 +79,21 @@ def exit_game():
     game_id
     :return:
     """
+    params = vld_params({
+        'uid:str': {'default': None, 'rule': Validator.required},
+        'game_id:int': {'default': None, 'rule': Validator.required},
+    })
+    return LudoApi.exit_game(**params)
 
-    pass
 
+@app.route('/ludo/player_ready')
+@check_login
+def player_ready():
+    params = vld_params({
+        'uid:str': {'default': None, 'rule': Validator.required},
+        'game_id:int': {'default': None, 'rule': Validator.required},
+    })
+    return LudoApi.player_ready(**params)
 
 @app.route('/ludo/throw_dice')
 @check_login
@@ -96,7 +108,7 @@ def throw_dice():
         'game_id:int': {'default': None, 'rule': Validator.required},
     })
 
-    LudoApi.throw_dice(**params)
+    return LudoApi.throw_dice(**params)
 
 
 @app.route('/ludo/move_plane')
@@ -112,7 +124,7 @@ def move_plane():
         'game_id:int': {'default': None, 'rule': Validator.required},
         'plane_num:int': {'default':None, 'rule': Validator.required},
     })
-    LudoApi.move_plane(**params)
+    return LudoApi.move_plane(**params)
 
 
 @app.route('/ludo/get_status')
@@ -128,7 +140,7 @@ def get_status():
         'game_id:int': {'default': None, 'rule': Validator.required},
     })
 
-    LudoApi.get_game_info(**params)
+    return LudoApi.get_game_info(**params)
 
 
 @app.route('/ludo/delete_game')
@@ -143,4 +155,4 @@ def delete_game():
         'game_id:int': {'default': None, 'rule': Validator.required},
     })
 
-    LudoApi.delete_game(**params)
+    return LudoApi.delete_game(**params)

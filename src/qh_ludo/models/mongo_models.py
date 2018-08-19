@@ -78,29 +78,6 @@ class Actor(Document):
     meta = {'collection': 'actor', "strict": False}
 
 
-class Notice(Document):
-    aid = StringField()
-    mtime = IntField()
-    official = DictField(default={})
-
-    meta = {'collection': 'notice', "strict": False}
-
-
-class Rmember(Document):
-    roomId = StringField()
-    aid = StringField()
-    valid = IntField(default=0)
-    utype = IntField(default=1)
-    name = StringField(default='')
-    rid = IntField()
-    rname = StringField(default='')
-    rrid = IntField()
-    devote = IntField(default=0)
-    mtime = IntField()
-
-    meta = {'collection': 'rmember', "strict": False}
-
-
 class GoldDetail(Document):
     uid = StringField()
     action = IntField(default=0)
@@ -113,14 +90,6 @@ class GoldDetail(Document):
     meta = {'collection': 'goldDetail', "strict": False}
 
 
-class Blacklist(Document):
-    uid = StringField()  # 操作用户id
-    aid = StringField()  # 被拉黑用户id
-    ctime = IntField()  # 创建时间
-
-    meta = {'collection': 'blacklist', "strict": False}
-
-
 class SysConfig(Document):
     """
     全局配置表
@@ -131,38 +100,16 @@ class SysConfig(Document):
     meta = {'collection': 'sys_config', "strict": False}
 
 
-class UserLevel(Document):
+class LudoRecord(Document):
     """
-    用户等级、经验表
+    计算记录流水
     """
-    uid = StringField()
-    level = IntField(default=0)
-    exp = IntField(default=0)
-    last_benefit_level = IntField(default=0)  # 记录上次领取福利的等级，确保只发放一次
+    room_id = StringField(default=0)
+    game_id = IntField(default=0)
+    uid_list = ListField(default=[])
+    winner = StringField(default="")
+    win_gold = IntField(default=0)
+    sys_get = IntField(default=0)
+    ctime = IntField(default=0)
 
-    meta = {'collection': 'user_level', "strict": False}
-
-
-class Badge(Document):
-    """用户获得的徽章记录"""
-    uid = StringField()
-    badge_id = IntField()  # 徽章id
-    status = IntField()  # 徽章佩戴状态，0为未佩戴，1-3为佩戴序号
-    get_time = IntField()  # 徽章获得时间
-
-    meta = {'collection': 'badge', "strict": False}
-
-
-class BadgeList(Document):
-    """可以获得的徽章列表"""
-    badge_id = IntField()  # 徽章id
-    name = StringField(default='')  # 徽章名字
-    ar_name = StringField(default='')  # 阿拉伯语徽章名
-    icon = StringField(default='')  # 图标
-    desc = StringField(default='')  # 徽章描述
-    ar_desc = StringField(default='')  # 阿拉伯语描述
-    valid = IntField(default=0)  # 徽章是否启用
-    badge_order = IntField(default=0)  # 徽章排序
-
-    meta = {'collection': 'badge_list', "strict": False}
-
+    meta = {'collection': 'ludo_record', "strict": False}

@@ -1,15 +1,17 @@
 # -*- coding:utf-8 -*-
-import json
 import random
+
+import time
 from qh_public.api import ApiResult, DistributedLock
 from qh_public.async import broadcast_message
 
-from qh_ludo.models.mongo_models import Actor
+from qh_ludo.models.mongo_models import Actor, LudoRecord
 from qh_ludo.settings import errorCode, config
 from qh_ludo.units import tools
 from qh_ludo.units.game_set import GameSet
 from qh_ludo.units.ludo_redis_helper import LudoHelper
 from qh_ludo.units.player import Player
+
 
 log = tools.getLogger("ludo_web")
 
@@ -88,10 +90,11 @@ class LudoApi(object):
         if game_info['status'] != config.LUDO_READY:
             return result.error(errorCode.PLAYER_NOT_READY)
 
-        update_dict = dict()
-        update_dict['status'] = config.LUDO_RUN
-        update_dict['current_player'] = uid
-        game = LudoHelper.update_game(game_id, **update_dict)
+        with DistributedLock("ludo_game_{}".format(game_id), timeout=1, ex=30, slp=0.1) as lock:
+            update_dict = dict()
+            update_dict['status'] = config.LUDO_RUN
+            update_dict['current_player'] = uid
+            game = LudoHelper.update_game(game_id, **update_dict)
 
         player_dict = dict()
         for p in game['uids']:
@@ -235,8 +238,8 @@ class LudoApi(object):
     def judge_recall(cls, player_info, game_info):
         """
         判断是否对玩家进行撤回操作
-        :param uid:
-        :param game_id:
+        :param player_info:
+        :param game_info:
         :return:
         """
         if len(player_info['history']) == 2:
@@ -392,8 +395,8 @@ class LudoApi(object):
 
             win = cls.is_win(p_info)
             if win:
-                win_gold = cls.settle_accounts(uid, game_info)
-                game_info = LudoHelper.update_game(game_id, winner=uid, win_gold=win_gold, status=config.LUDO_END)
+                # 游戏结束
+                game_info = cls.game_over(uid, game_info)
 
             else:
                 next_uid = cls.get_next_uid(uid, game_info)
@@ -409,11 +412,49 @@ class LudoApi(object):
         return result.success(data={"game_info":game_info, "players_info": player_dict})
 
     @classmethod
+    def game_over(cls, uid, game_info):
+        """
+        游戏结束
+        :param uid:
+        :param game_info:
+        :return:
+        """
+        win_gold, sys_get = cls.settle_accounts(uid, game_info)
+        cls.end_record(uid, win_gold, sys_get, game_info)
+        game_info = cls.reset_game(uid, game_info['game_id'], win_gold)
+        return game_info
+
+    @classmethod
+    def reset_game(cls, uid, game_id, win_gold):
+        """
+        重新设置游戏信息
+        :param uid:
+        :param game_id:
+        :return:
+        """
+        game_info = LudoHelper.update_game(game_id, winner=uid, win_gold=win_gold, status=config.LUDO_END)
+        return game_info
+
+    @classmethod
+    def end_record(cls, uid, win_gold, sys_get, game_info):
+        """
+        流水记录到mongodb
+        :param uid:
+        :param win_gold:
+        :param sys_get:
+        :param game_info:
+        :return:
+        """
+        ludo_record = LudoRecord(room_id=game_info['room_id'], game_id=game_info['game_id'], uid_list=game_info['uids'],
+                                 winner=game_info['winner'], win_gold=win_gold, sys_get=sys_get, ctime=int(time.time()))
+        ludo_record.save()
+
+    @classmethod
     def settle_accounts(cls, uid, game_info):
         total_gold = game_info['gold'] * len(game_info['uids'])
         sys_get = int(total_gold * config.SYS_GET)
         tools.change_gold(uid, total_gold-sys_get)
-        return total_gold - sys_get
+        return total_gold - sys_get, sys_get
 
     @classmethod
     def is_win(cls, play_info):
@@ -424,6 +465,7 @@ class LudoApi(object):
         """
         if play_info['is_dislodge'] and play_info['plane_on_des']:
             return True
+
         return False
 
     @classmethod
@@ -456,10 +498,9 @@ class LudoApi(object):
                 update = dict()
                 update[config.PLANE_NAME[index+1]] = 0
                 Player.update_info(p, game_id, **update)
-                break
+                return True
 
-        return True
-
+        return False
 
     @classmethod
     def get_user_locations(cls, player_info):
@@ -524,3 +565,24 @@ class LudoApi(object):
         GameSet.delete(game_info['max_numbers'], game_id)
 
         return result.success()
+
+    @classmethod
+    def player_ready(cls, uid, game_id):
+        """
+        玩家点击准备
+        :param uid:
+        :param game_id:
+        :return:
+        """
+        
+        pass
+
+    @classmethod
+    def exit_game(cls, uid, game_id):
+        """
+        玩家退出----在游戏进行中不能退出，退出变为托管
+        :param uid:
+        :param game_id:
+        :return:
+        """
+        pass

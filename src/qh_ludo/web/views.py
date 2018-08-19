@@ -128,3 +128,18 @@ def get_status():
     })
 
     LudoApi.get_game_info(**params)
+
+
+@app.route('/ludo/delete_game')
+@check_login
+def delete_game():
+    """
+    房主删除游戏
+    :return:
+    """
+    params = vld_params({
+        'uid:str': {'default': None, 'rule': Validator.required},
+        'game_id:int': {'default': None, 'rule': Validator.required},
+    })
+
+    LudoApi.delete_game(**params)

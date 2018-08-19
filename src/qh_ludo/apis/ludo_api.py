@@ -39,11 +39,12 @@ class LudoApi(object):
             game_id=game_id,
             uids=[uid],
             max_numbers=numbers,
-            type=type,
             gold=cost_gold,
             status=config.LUDO_CREATE,
             current_player="",
             creator=uid,
+            winner="",
+            win_gold=0,
         )
 
         # 设置玩家初始信息
@@ -93,10 +94,17 @@ class LudoApi(object):
 
         player_dict = dict()
         for p in game['uids']:
+            # todo 看情况是否要进行异步
+            tools.change_gold(p, -game_info['gold'])
+            if p == uid:
+                continue
+
             player_info = Player.get_player_info(p, game_id)
             player_dict[p] = player_info
 
         log.debug("uid: %s, game_id: %s, game: %s", uid, game_id, game)
+        # todo 广播
+        cls.broadcast(p, data=)
         return result.success(data={"game_info":game, "players_info": player_dict})
 
     @classmethod
@@ -260,11 +268,6 @@ class LudoApi(object):
         Player.update_info(player_info['uid'], game_id, **player_update)
 
     @classmethod
-    def record_history(cls):
-        pass
-
-
-    @classmethod
     def join_game(cls, uid, game_id):
         result = ApiResult.get_inst()
         actor = Actor.objects(id=uid).first()
@@ -375,28 +378,102 @@ class LudoApi(object):
             if dice_num == 6:
                 update_dict['history'] = player_info['history'].append({'step':steps, 'name':name})
 
-            # 撞机判断
-            flag = cls.judge_strike()
+            # 撞机处理
+            location = cls.get_location(player_info['seat_id'], plane_sum_steps)
+            flag = cls.strike_handle(location, uid, game_id)
             if flag:
                 update_dict['is_dislodge'] = config.SUCCESS_DISLODGE
 
-            Player.update_info(uid, game_id, **update_dict)
+            p_info = Player.update_info(uid, game_id, **update_dict)
 
-            next_uid = cls.get_next_uid(uid, game_info)
-            LudoHelper.update_game(game_id, current_player=next_uid)
+            win = cls.is_win(p_info)
+            if win:
+                # todo 结算 + 通知
+                win_gold = cls.settle_accounts(uid, game_info)
+                game_info = LudoHelper.update_game(game_id, winner=uid, win_gold=win_gold, status=config.LUDO_END)
 
-        return result.success(data={})
+            else:
+                next_uid = cls.get_next_uid(uid, game_info)
+                game_info = LudoHelper.update_game(game_id, current_player=next_uid)
 
+        player_dict = dict()
+        for p in game_info['uids']:
+            player_dict[p] = Player.get_player_info(uid, game_id)
+
+        log.debug("uid: %s, game_id: %s, player_dict: %s, game_info: %s", uid, game_id, player_dict, game_info)
+        for p in game_info['uids']:
+            if p == uid:
+                continue
+                
+            cls.broadcast(p, data=)
+
+        return result.success(data={"game_info":game_info, "players_info": player_dict})
 
     @classmethod
-    def judge_strike(cls):
+    def settle_accounts(cls, uid, game_info):
+        total_gold = game_info['gold'] * len(game_info['uids'])
+        sys_get = int(total_gold * config.SYS_GET)
+        tools.change_gold(uid, total_gold-sys_get)
+        return total_gold - sys_get
+
+    @classmethod
+    def is_win(cls, play_info):
+        """
+        判断是否胜利
+        :param play_info:
+        :return:
+        """
+        if play_info['is_dislodge'] and play_info['plane_on_des']:
+            return True
+        return False
+
+    @classmethod
+    def get_location(cls, seat_id, plane_steps):
+        location = config.LOCATION_DICT[seat_id][plane_steps]
+        return location
+
+    @classmethod
+    def strike_handle(cls, location, uid, game_id):
         """
         判断是否撞机
         :return:
         """
-        
+        game_info = LudoHelper.get_game(game_id)
+        if not game_info:
+            log.error("judge_strike, game not exist !!!!!, game_id: %s", game_id)
+            return False
+
+        if location in config.SAFE_PLACE:
+            return False
+
+        for p in game_info['uids']:
+            if p == uid:
+                continue
+
+            player_info = Player.get_player_info(p, game_id)
+            location_list = cls.get_user_locations(player_info)
+            if location in location_list:
+                index = location.index(location)
+                update = dict()
+                update[config.PLANE_NAME[index+1]] = 0
+                Player.update_info(p, game_id, **update)
+                break
+
         return True
 
+
+    @classmethod
+    def get_user_locations(cls, player_info):
+        location_list = list()
+        if not player_info:
+            return location_list
+
+        for name in config.PLANE_NAME_LIST:
+            location = cls.get_location(player_info['seat_id'], player_info[name])
+            location_list.append(location)
+
+        log.debug("player_info: %s, location_list: %s", player_info, location_list)
+        return location_list
 
     @classmethod
     def count_steps(cls, plane_num, player_info):
@@ -422,3 +499,30 @@ class LudoApi(object):
 
             else:
                 return dice_num
+
+    @classmethod
+    def delete_game(cls, uid, game_id):
+        result = ApiResult.get_inst()
+
+        game_info = LudoHelper.get_game(game_id)
+        if not game_info:
+            return result.error(errorCode.GAME_NOT_EXIST)
+
+        if uid != game_info['creator']:
+            return result.error(errorCode.CODE_PARAMETER_ERR)
+
+        if game_info['status'] not in [config.LUDO_CREATE, config.LUDO_END]:
+            return result.error(errorCode.CODE_PARAMETER_ERR, msg="can not delete game")
+
+        for p in game_info['uids']:
+            Player.del_info(p, game_id)
+            if p == uid:
+                continue
+
+            # TODO 通知其他玩家
+            cls.broadcast()
+
+        LudoHelper.del_game(game_id)
+        GameSet.delete(game_info['max_numbers'], game_id)
+
+        return result.success()

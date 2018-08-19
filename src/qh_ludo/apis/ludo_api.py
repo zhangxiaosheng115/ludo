@@ -2,6 +2,7 @@
 import json
 import random
 from qh_public.api import ApiResult, DistributedLock
+from qh_public.async import broadcast_message
 
 from qh_ludo.models.mongo_models import Actor
 from qh_ludo.settings import errorCode, config
@@ -96,15 +97,13 @@ class LudoApi(object):
         for p in game['uids']:
             # todo 看情况是否要进行异步
             tools.change_gold(p, -game_info['gold'])
-            if p == uid:
-                continue
-
             player_info = Player.get_player_info(p, game_id)
             player_dict[p] = player_info
 
         log.debug("uid: %s, game_id: %s, game: %s", uid, game_id, game)
-        # todo 广播
-        cls.broadcast(p, data=)
+        uid_list = game['uids']
+        cls.broadcast_to_uids(uid_list.pop(uid), data={"game_info":game, "players_info": player_dict})
+        log.debug("uid: %s, game_id: %s, game_info: %s, player_dict: %s", uid, game_id, game_info, player_dict)
         return result.success(data={"game_info":game, "players_info": player_dict})
 
     @classmethod
@@ -173,12 +172,9 @@ class LudoApi(object):
         player_dict = dict()
         for p in game_info['uids']:
             player_dict[p] = Player.get_player_info(p, game_id)
-            if p == uid:
-                continue
-            else:
-                # todo 广播给其他玩家
-                cls.broadcast(p, data={"game_info":game_info, "players_info": player_dict})
 
+        uid_list = game_info['uids']
+        cls.broadcast_to_uids(uid_list.pop(uid), data={"game_info":game_info, "players_info": player_dict})
         log.debug("uid: %s, game_id: %s, game_info: %s, player_dict: %s", uid, game_id, game_info, player_dict)
         return result.success(data={"game_info":game_info, "players_info": player_dict})
 
@@ -188,7 +184,8 @@ class LudoApi(object):
         广播给其他玩家,发送到web_socket
         :return:
         """
-        pass
+        msg_body = {"uid": uid, "topic": "ludo message", "data": data}
+        broadcast_message(channel='send_msg_to_ws', msg_body=msg_body)
 
     @classmethod
     def count_flys(cls, dice_num, player_info):
@@ -287,7 +284,7 @@ class LudoApi(object):
 
         update_dict = dict()
         # 要进行加锁
-        with DistributedLock("join_ludo_game_{}".format(game_id), timeout=1, ex=30, slp=0.1) as lock:
+        with DistributedLock("ludo_game_{}".format(game_id), timeout=1, ex=30, slp=0.1) as lock:
             Player.init(uid, game_id)
 
             update_dict['uids'] = game_info['uids'].append(uid)
@@ -300,7 +297,14 @@ class LudoApi(object):
             player_dict[p] = player_info
 
         log.debug("uid: %s, game_id: %s, game_info: %s, player_dict: %s", uid, game_id, game, player_dict)
+        uid_list = game['uids']
+        cls.broadcast_to_uids(uid_list.pop(uid), data={"game_info":game, "players_info": player_dict})
         return result.success(data={"game_info":game, "players_info": player_dict})
+
+    @classmethod
+    def broadcast_to_uids(cls, uid_list, data):
+        for p in uid_list:
+            cls.broadcast(p, data=data)
 
     @classmethod
     def match_game(cls, uid):
@@ -388,7 +392,6 @@ class LudoApi(object):
 
             win = cls.is_win(p_info)
             if win:
-                # todo 结算 + 通知
                 win_gold = cls.settle_accounts(uid, game_info)
                 game_info = LudoHelper.update_game(game_id, winner=uid, win_gold=win_gold, status=config.LUDO_END)
 
@@ -401,12 +404,8 @@ class LudoApi(object):
             player_dict[p] = Player.get_player_info(uid, game_id)
 
         log.debug("uid: %s, game_id: %s, player_dict: %s, game_info: %s", uid, game_id, player_dict, game_info)
-        for p in game_info['uids']:
-            if p == uid:
-                continue
-                
-            cls.broadcast(p, data=)
-
+        uid_list = game_info['uids']
+        cls.broadcast_to_uids(uid_list.pop(uid), data={"game_info":game_info, "players_info": player_dict})
         return result.success(data={"game_info":game_info, "players_info": player_dict})
 
     @classmethod
@@ -519,8 +518,7 @@ class LudoApi(object):
             if p == uid:
                 continue
 
-            # TODO 通知其他玩家
-            cls.broadcast()
+            cls.broadcast(p, data={'msg': 'The game has been delete'})
 
         LudoHelper.del_game(game_id)
         GameSet.delete(game_info['max_numbers'], game_id)
